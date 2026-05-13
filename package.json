@@ -22,7 +22,8 @@
     "generate:sector": "tsx src/cli.ts sector-snapshot",
     "generate:case-study": "tsx src/cli.ts case-study",
     "generate:market-structure": "tsx src/cli.ts market-structure",
-    "export:pdf": "tsx src/export-pdf.ts"
+    "export:pdf": "tsx src/export-pdf.ts",
+    "export:daily-pdfs": "tsx src/export-daily-pdfs.ts"
   },
   "dependencies": {
     "@types/pdfkit": "^0.17.6",

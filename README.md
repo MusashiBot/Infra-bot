@@ -54,6 +54,12 @@ Generate one LLM-synthesized deep daily report from already-written JSON outputs
 npm run generate:deep-daily-from-cache -- --date 2026-05-13
 ```
 
+Export every Markdown report for a given day to PDF:
+
+```bash
+npm run export:daily-pdfs -- --date 2026-05-13
+```
+
 Generate one LLM-synthesized event case study:
 
 ```bash
@@ -110,3 +116,9 @@ For the LLM-backed deep report path, set:
 - `DEEPSEEK_API_KEY`
 - optionally `DEEPSEEK_BASE_URL`
 - optionally `DEEPSEEK_MODEL`
+
+The scheduled workflow now:
+
+1. generates the deterministic daily data pack
+2. synthesizes `deep-daily-from-cache`
+3. exports every Markdown report for that day to PDF

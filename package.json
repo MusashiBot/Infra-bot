@@ -1,0 +1,36 @@
+{
+  "name": "@musashi/infra-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "check": "npm run typecheck && npm run format:check",
+    "bot": "tsx src/cli.ts",
+    "generate:daily": "tsx src/cli.ts daily-pack",
+    "generate:movers": "tsx src/cli.ts movers",
+    "generate:sector": "tsx src/cli.ts sector-snapshot",
+    "generate:case-study": "tsx src/cli.ts case-study",
+    "generate:market-structure": "tsx src/cli.ts market-structure"
+  },
+  "dependencies": {
+    "postgres": "^3.4.9",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

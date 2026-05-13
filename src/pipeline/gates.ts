@@ -179,6 +179,7 @@ export function buildDailyPublishPacket(args: {
         0,
         REPORT_THRESHOLDS.movers.topCount,
       ),
+      thin_watchlist: thinMovers.slice(0, REPORT_THRESHOLDS.movers.topCount),
       thin_market_count: thinMovers.length,
     },
     sectors: {

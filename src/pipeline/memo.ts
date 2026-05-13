@@ -59,12 +59,94 @@ function renderMoverBullet(args: {
   prior: number;
   current: number;
   change: number;
+  label: "high-confidence" | "thin-market";
 }): string {
   return `${args.title}: probability moved from ${formatPercent(
     args.prior,
   )} to ${formatPercent(args.current)} in 24h (${formatSignedPercent(
     args.change,
-  )}); high-confidence repricing.`;
+  )}); ${args.label} repricing.`;
+}
+
+function dedupeMarketsByTitle<
+  T extends {
+    title: string;
+    volume_24h: number | null;
+  },
+>(markets: T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+
+  for (const market of [...markets].sort(
+    (left, right) => (right.volume_24h ?? 0) - (left.volume_24h ?? 0),
+  )) {
+    const titleKey = market.title.replace(/\s+/g, " ").trim().toLowerCase();
+    if (seen.has(titleKey)) {
+      continue;
+    }
+    seen.add(titleKey);
+    deduped.push(market);
+  }
+
+  return deduped;
+}
+
+function describeDominance(share: number | null): string {
+  if (share === null) {
+    return "n/a";
+  }
+  if (share >= 0.5) {
+    return "highly concentrated";
+  }
+  if (share >= 0.25) {
+    return "moderately concentrated";
+  }
+  return "fairly distributed";
+}
+
+function buildDeterministicTitle(packet: DailyPublishPacket): string {
+  if (packet.movers.top_repriced.length > 0) {
+    const topMover = packet.movers.top_repriced[0]!;
+    return `${topMover.title} Leads a High-Confidence Repricing Day`;
+  }
+
+  const topSector = packet.sectors.included[0];
+  if (topSector) {
+    return `${topSector.title.replace(
+      /: market-implied snapshot$/i,
+      "",
+    )} Leads a Low-Noise Sector Read While Movers Stay Thin`;
+  }
+
+  return `Kalshi Market Pulse: ${packet.date}`;
+}
+
+function buildDeterministicSummary(packet: DailyPublishPacket): string {
+  const sectorClauses = packet.sectors.included.slice(0, 3).map((sector) => {
+    const avg =
+      sector.summary.average_implied_yes_probability === null
+        ? "n/a"
+        : formatPercent(sector.summary.average_implied_yes_probability);
+    const volume = Math.round(sector.summary.total_volume_24h).toLocaleString();
+    return `${sector.title.replace(
+      /: market-implied snapshot$/i,
+      "",
+    )} averaged ${avg} across ${sector.summary.priced_markets} priced contracts on ${volume} in 24h volume`;
+  });
+
+  const moverSentence =
+    packet.movers.top_repriced.length > 0
+      ? `${packet.movers.top_repriced.length} high-confidence repricings cleared the flagship gate.`
+      : `No high-confidence repricings cleared the flagship gate; ${packet.movers.thin_market_count} thin-market moves were downgraded to watchlist status.`;
+
+  const trustCategory = packet.market_structure.categories[0];
+  const trustSentence = trustCategory
+    ? `${trustCategory.category} markets historically resolved yes ${formatPercent(
+        trustCategory.yes_resolution_rate,
+      )} of the time across ${trustCategory.resolved_count} resolved markets.`
+    : `Historical trust context was limited to the buckets that cleared the minimum resolved-count threshold.`;
+
+  return `${sectorClauses.join("; ")}. ${moverSentence} ${trustSentence}`;
 }
 
 export function buildFlagshipSections(
@@ -83,32 +165,51 @@ export function buildFlagshipSections(
       prior: mover.prior_yes_price,
       current: mover.current_yes_price,
       change: mover.change_24h,
+      label: "high-confidence",
+    }),
+  );
+  const thinWatchlistBullets = dedupeMarketsByTitle(
+    packet.movers.thin_watchlist,
+  ).map((mover) =>
+    renderMoverBullet({
+      title: mover.title,
+      prior: mover.prior_yes_price,
+      current: mover.current_yes_price,
+      change: mover.change_24h,
+      label: "thin-market",
     }),
   );
 
   const sectorBullets = packet.sectors.included.flatMap((sector) => {
     const bullets: string[] = [];
-    if (sector.summary.average_implied_yes_probability !== null) {
-      bullets.push(
-        `${sector.title}: average implied yes probability is ${formatPercent(
-          sector.summary.average_implied_yes_probability,
-        )} across ${sector.summary.priced_markets} priced markets, with ${sector.summary.total_volume_24h.toLocaleString()} in 24h volume.`,
-      );
-    } else {
-      bullets.push(
-        `${sector.title}: ${sector.summary.priced_markets} priced markets cleared the sector gate, with ${sector.summary.total_volume_24h.toLocaleString()} in 24h volume.`,
-      );
-    }
+    const cleanTitle = sector.title.replace(/: market-implied snapshot$/i, "");
+    const averageText =
+      sector.summary.average_implied_yes_probability === null
+        ? "n/a"
+        : formatPercent(sector.summary.average_implied_yes_probability);
 
-    for (const market of sector.markets.slice(0, 2)) {
+    bullets.push(
+      `${cleanTitle}: average implied yes probability is ${averageText} across ${sector.summary.priced_markets} priced contracts, with ${Math.round(
+        sector.summary.total_volume_24h,
+      ).toLocaleString()} in 24h volume.`,
+    );
+    bullets.push(
+      `${cleanTitle}: the top contract accounts for ${formatPercent(
+        sector.summary.dominance_share,
+      )} of tracked 24h volume, so this sector is ${describeDominance(
+        sector.summary.dominance_share,
+      )} rather than driven by a single line.`,
+    );
+
+    for (const market of dedupeMarketsByTitle(sector.markets).slice(0, 2)) {
       if (market.yes_price === null) {
         continue;
       }
 
       bullets.push(
-        `${sector.title} watchlist: ${market.title} sits at ${formatPercent(
+        `${cleanTitle} watchlist: ${market.title} sits at ${formatPercent(
           market.yes_price,
-        )}.`,
+        )} on ${Math.round(market.volume_24h ?? 0).toLocaleString()} in 24h volume.`,
       );
     }
 
@@ -116,6 +217,7 @@ export function buildFlagshipSections(
   });
 
   const trustBullets = [
+    `Daily mover quality: ${packet.movers.top_repriced.length} high-confidence repricings and ${packet.movers.thin_market_count} thin-market repricings reached the top-mover screen.`,
     ...packet.market_structure.categories.slice(0, 2).map((category) => {
       const rate =
         category.yes_resolution_rate === null
@@ -143,7 +245,8 @@ export function buildFlagshipSections(
         moverBullets.length > 0
           ? moverBullets
           : [
-              "No high-confidence repricings cleared the flagship narrative gate; thin-market moves were suppressed and moved into caveats only.",
+              `No high-confidence repricings cleared the flagship narrative gate; all ${packet.movers.thin_market_count} top 24h repricings were thin-market contracts.`,
+              ...thinWatchlistBullets.slice(0, 5),
             ],
     },
     {
@@ -249,40 +352,13 @@ function buildLowSignalMemo(packet: DailyPublishPacket): ReportFileSet {
 async function generateFlagshipFrame(
   packet: DailyPublishPacket,
 ): Promise<{ title: string; summary: string }> {
-  try {
-    const raw = await generateStructuredNarrative({
-      system: [
-        "You write analytical, crisp public market-intelligence memo framing for Musashi.",
-        "Use ONLY the validated publish packet provided by the user.",
-        "Return strict JSON with keys: title and summary.",
-        "Do not use unsupported causal language.",
-        "Do not restate every detail; summarize the strongest validated signal set.",
-      ].join(" "),
-      user: [
-        "Write a title and 2-4 sentence summary for the flagship daily memo.",
-        "Frame everything as market-implied or observed repricing, not causal proof.",
-        "Publish packet:",
-        JSON.stringify(packet, null, 2),
-      ].join("\n\n"),
-      maxTokens: 500,
-      temperature: 0.2,
-    });
+  const deterministic = {
+    title: buildDeterministicTitle(packet),
+    summary: buildDeterministicSummary(packet),
+  };
+  validateNarrativeFrame(deterministic);
 
-    const parsed = NarrativeFrameSchema.parse(JSON.parse(raw));
-    validateNarrativeFrame(parsed);
-    return parsed;
-  } catch {
-    const sectorTitles = packet.sectors.included.map((sector) => sector.title);
-    const sectorSummary =
-      sectorTitles.length > 0
-        ? `Validated sector reads came from ${sectorTitles.join(", ")}.`
-        : "No sector read cleared the publish gate.";
-
-    return {
-      title: `Kalshi Market Pulse: ${packet.date}`,
-      summary: `${packet.headline.summary_facts[0] ?? "No top repricing cleared the publish gate."} ${sectorSummary} Historical trust context is included only from categories and liquidity buckets that met the minimum resolved-count threshold.`,
-    };
-  }
+  return deterministic;
 }
 
 async function generateCaseStudyFrame(

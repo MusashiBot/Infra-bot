@@ -58,6 +58,28 @@ function makeDailyPublishPacket(): DailyPublishPacket {
           },
         },
       ],
+      thin_watchlist: [
+        {
+          market_id: "m2",
+          platform_id: "pm2",
+          title: "Mover B",
+          category: "crypto",
+          current_yes_price: 0.1,
+          prior_yes_price: 0.8,
+          change_24h: -0.7,
+          abs_change_24h: 0.7,
+          volume_24h: 20,
+          liquidity: 0,
+          closes_at: null,
+          quality: {
+            has_current_price: true,
+            has_prior_price: true,
+            meets_min_move: true,
+            is_high_confidence: false,
+            reason_flags: ["thin_market"],
+          },
+        },
+      ],
       thin_market_count: 1,
     },
     sectors: {

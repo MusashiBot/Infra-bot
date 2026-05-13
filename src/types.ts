@@ -228,6 +228,7 @@ export interface DailyPublishPacket {
   movers: {
     status: PublishSectionStatus;
     top_repriced: MoverFact[];
+    thin_watchlist: MoverFact[];
     thin_market_count: number;
   };
   sectors: {

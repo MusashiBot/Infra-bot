@@ -204,6 +204,7 @@ test("buildDailyPublishPacket keeps only valid sectors and passes global gate", 
   assert.equal(packet.sectors.omitted.length, 1);
   assert.equal(packet.sectors.omitted[0]?.reason, "insufficient_volume");
   assert.equal(packet.movers.top_repriced.length, 6);
+  assert.equal(packet.movers.thin_watchlist.length, 0);
 });
 
 test("buildDailyPublishPacket marks low-signal day when gate fails", () => {
@@ -233,6 +234,7 @@ test("buildDailyPublishPacket marks low-signal day when gate fails", () => {
     "insufficient_valid_sectors",
     "missing_market_structure",
   ]);
+  assert.equal(packet.movers.thin_watchlist.length, 0);
 });
 
 test("buildCaseStudyPublishPacket blocks weak clusters", () => {

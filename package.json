@@ -18,9 +18,12 @@
     "generate:movers": "tsx src/cli.ts movers",
     "generate:sector": "tsx src/cli.ts sector-snapshot",
     "generate:case-study": "tsx src/cli.ts case-study",
-    "generate:market-structure": "tsx src/cli.ts market-structure"
+    "generate:market-structure": "tsx src/cli.ts market-structure",
+    "export:pdf": "tsx src/export-pdf.ts"
   },
   "dependencies": {
+    "@types/pdfkit": "^0.17.6",
+    "pdfkit": "^0.18.0",
     "postgres": "^3.4.9",
     "zod": "^4.1.12"
   },

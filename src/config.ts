@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1).optional(),
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
+  LLM_PROVIDER: z.enum(["deepseek"]).default("deepseek"),
   OUTPUT_DIR: z.string().default("outputs"),
   REPORT_MARKET_LIMIT: z.coerce.number().int().positive().default(25),
   CASE_STUDY_WINDOW_DAYS: z.coerce.number().int().positive().default(7),

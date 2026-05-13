@@ -1,7 +1,8 @@
 import { getSql } from "../db.js";
 import { getEnv } from "../config.js";
+import { REPORT_THRESHOLDS } from "../pipeline/thresholds.js";
 import { getSector } from "../sectors.js";
-import type { ReportFileSet, SectorSnapshotRow } from "../types.js";
+import type { ReportFileSet, SectorFact, SectorSnapshotRow } from "../types.js";
 import {
   formatCurrency,
   formatDate,
@@ -60,45 +61,93 @@ export async function generateSectorSnapshot(
     limit ${env.REPORT_MARKET_LIMIT}
   `;
 
-  const rowsWithProbability = rows.filter((row) => row.yes_price !== null);
-  const avgProbability =
-    rowsWithProbability.length === 0
-      ? null
-      : rowsWithProbability.reduce(
-          (sum, row) => sum + (toFiniteNumber(row.yes_price) ?? 0),
-          0,
-        ) / rowsWithProbability.length;
+  const markets = rows.map((row) => ({
+    market_id: row.id,
+    platform_id: row.platform_id,
+    title: row.title,
+    category: row.category,
+    yes_price: toFiniteNumber(row.yes_price),
+    no_price: toFiniteNumber(row.no_price),
+    volume_24h: toFiniteNumber(row.volume_24h),
+    liquidity: toFiniteNumber(row.liquidity),
+    spread: toFiniteNumber(row.spread),
+    closes_at: row.closes_at,
+  }));
 
-  const title = `${sector.title}: market-implied snapshot`;
+  const pricedMarkets = markets.filter((row) => row.yes_price !== null);
+  const avgProbability =
+    pricedMarkets.length === 0
+      ? null
+      : pricedMarkets.reduce((sum, row) => sum + (row.yes_price ?? 0), 0) /
+        pricedMarkets.length;
+  const totalVolume24h = markets.reduce(
+    (sum, row) => sum + (row.volume_24h ?? 0),
+    0,
+  );
+  const dominantMarket = [...markets].sort(
+    (left, right) => (right.volume_24h ?? 0) - (left.volume_24h ?? 0),
+  )[0];
+  const dominanceShare =
+    totalVolume24h > 0 && dominantMarket
+      ? (dominantMarket.volume_24h ?? 0) / totalVolume24h
+      : null;
+
+  const packet: SectorFact = {
+    slug: slugify(`sector-${sector.slug}`),
+    title: `${sector.title}: market-implied snapshot`,
+    provenance: {
+      generated_at: new Date().toISOString(),
+      source: "musashi_truth_layer",
+      packet_type: "sector_packet",
+      query_window: "current",
+    },
+    summary: {
+      matched_markets: markets.length,
+      priced_markets: pricedMarkets.length,
+      average_implied_yes_probability: avgProbability,
+      total_volume_24h: totalVolume24h,
+      top_market_probability: dominantMarket?.yes_price ?? null,
+      dominance_share: dominanceShare,
+      quality_flags: [
+        ...(markets.length >= REPORT_THRESHOLDS.sectors.minMatchedMarkets
+          ? []
+          : ["insufficient_matched_markets"]),
+        ...(pricedMarkets.length >= REPORT_THRESHOLDS.sectors.minPricedMarkets
+          ? []
+          : ["insufficient_priced_markets"]),
+        ...(totalVolume24h >= REPORT_THRESHOLDS.sectors.minTotalVolume24h
+          ? []
+          : ["insufficient_volume"]),
+      ],
+    },
+    markets,
+  };
+
   const markdown = [
-    `# ${title}`,
+    `# ${packet.title}`,
     "",
-    `Open Kalshi markets matched to the ${sector.title} sector using category/title heuristics.`,
+    `Source packet for open Kalshi markets matched to the ${sector.title} sector using category/title heuristics.`,
     "",
-    `- matched markets: ${rows.length}`,
-    `- average implied yes probability: ${formatPercent(avgProbability)}`,
+    `- matched markets: ${packet.summary.matched_markets}`,
+    `- priced markets: ${packet.summary.priced_markets}`,
+    `- average implied yes probability: ${formatPercent(packet.summary.average_implied_yes_probability)}`,
+    `- total 24h volume: ${formatCurrency(packet.summary.total_volume_24h)}`,
+    `- dominance share: ${formatPercent(packet.summary.dominance_share)}`,
     "",
-    ...rows.map(
-      (row, index) =>
-        `${index + 1}. **${row.title}** | yes ${formatPercent(row.yes_price)} | vol ${formatCurrency(
-          row.volume_24h,
-        )} | liq ${formatCurrency(row.liquidity)} | closes ${formatDate(row.closes_at)}`,
-    ),
+    ...packet.markets
+      .slice(0, REPORT_THRESHOLDS.sectors.topMarketsPerSector)
+      .map(
+        (row, index) =>
+          `${index + 1}. **${row.title}** | yes ${formatPercent(row.yes_price)} | vol ${formatCurrency(
+            row.volume_24h,
+          )} | liq ${formatCurrency(row.liquidity)} | closes ${formatDate(row.closes_at)}`,
+      ),
   ].join("\n");
 
   return {
-    slug: slugify(`sector-${sector.slug}`),
-    title,
+    slug: packet.slug,
+    title: packet.title,
     markdown,
-    json: {
-      title,
-      sector,
-      generated_at: new Date().toISOString(),
-      summary: {
-        matched_markets: rows.length,
-        average_implied_yes_probability: avgProbability,
-      },
-      rows,
-    },
+    json: packet,
   };
 }

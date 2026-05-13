@@ -1,9 +1,25 @@
 import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import PDFDocument from "pdfkit";
 import { getEnv } from "./config.js";
 import { parseArg, todaySlug } from "./utils.js";
+
+export function isSupportedDailyMarkdown(
+  fileName: string,
+  date: string,
+): boolean {
+  if (fileName === `deep-daily-${date}.md`) return true;
+  if (fileName === "market-structure.md") return true;
+  if (fileName === "movers-all.md") return true;
+  if (fileName === "movers-crypto.md") return true;
+  if (fileName === "sector-crypto.md") return true;
+  if (fileName === "sector-fed.md") return true;
+  if (fileName === "sector-elections.md") return true;
+  if (/^deep-case-study-[a-z0-9-]+\.md$/i.test(fileName)) return true;
+  return false;
+}
 
 async function ensureParentDir(filePath: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -88,7 +104,7 @@ async function renderMarkdownToPdf(
   });
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const env = getEnv();
   const date = parseArg(args, "--date") ?? todaySlug();
@@ -97,7 +113,12 @@ async function main(): Promise<void> {
 
   const entries = await fs.readdir(dateDir, { withFileTypes: true });
   const markdownFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".md") &&
+        isSupportedDailyMarkdown(entry.name, date),
+    )
     .map((entry) => entry.name)
     .sort();
 
@@ -127,7 +148,13 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+const isDirectExecution =
+  process.argv[1] !== undefined &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

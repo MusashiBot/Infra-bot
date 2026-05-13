@@ -1,10 +1,12 @@
 import { getSql } from "../db.js";
+import { REPORT_THRESHOLDS } from "../pipeline/thresholds.js";
 import type {
   LiquidityBucketStat,
   MarketStructureCategory,
+  MarketStructurePacket,
   ReportFileSet,
 } from "../types.js";
-import { formatPercent, slugify } from "../utils.js";
+import { formatPercent, slugify, toFiniteNumber } from "../utils.js";
 
 export async function generateMarketStructureReport(): Promise<ReportFileSet> {
   const sql = getSql();
@@ -35,7 +37,6 @@ export async function generateMarketStructureReport(): Promise<ReportFileSet> {
       avg(case when outcome = 'YES' then 1.0 else 0.0 end)::float8 as yes_resolution_rate
     from resolved_markets
     group by category
-    having count(*) >= 20
     order by resolved_count desc
     limit 12
   `;
@@ -72,36 +73,61 @@ export async function generateMarketStructureReport(): Promise<ReportFileSet> {
     order by resolved_count desc
   `;
 
-  const title = "Market structure: trust and resolution context";
+  const packet: MarketStructurePacket = {
+    slug: slugify("market-structure"),
+    title: "Market structure: trust and resolution context",
+    provenance: {
+      generated_at: new Date().toISOString(),
+      source: "musashi_truth_layer",
+      packet_type: "market_structure_packet",
+    },
+    categories: byCategory.map((row) => ({
+      category: row.category,
+      resolved_count: row.resolved_count,
+      avg_final_yes_price: toFiniteNumber(row.avg_final_yes_price),
+      avg_preclose_yes_price: toFiniteNumber(row.avg_preclose_yes_price),
+      yes_resolution_rate: toFiniteNumber(row.yes_resolution_rate),
+      meets_min_sample:
+        row.resolved_count >=
+        REPORT_THRESHOLDS.marketStructure.minResolvedCount,
+    })),
+    liquidity_buckets: byLiquidity.map((row) => ({
+      liquidity_bucket: row.liquidity_bucket,
+      resolved_count: row.resolved_count,
+      avg_preclose_yes_price: toFiniteNumber(row.avg_preclose_yes_price),
+      yes_resolution_rate: toFiniteNumber(row.yes_resolution_rate),
+      meets_min_sample:
+        row.resolved_count >=
+        REPORT_THRESHOLDS.marketStructure.minResolvedCount,
+    })),
+  };
+
   const markdown = [
-    `# ${title}`,
+    `# ${packet.title}`,
+    "",
+    "Source packet for resolved-market trust and calibration context.",
     "",
     "## Resolved markets by category",
-    ...byCategory.map(
+    ...packet.categories.map(
       (row) =>
         `- **${row.category}** | resolved ${row.resolved_count} | avg pre-close yes ${formatPercent(
           row.avg_preclose_yes_price,
-        )} | yes resolution rate ${formatPercent(row.yes_resolution_rate)}`,
+        )} | yes resolution rate ${formatPercent(row.yes_resolution_rate)} | ${row.meets_min_sample ? "publishable" : "below-sample-threshold"}`,
     ),
     "",
     "## Resolved markets by liquidity bucket",
-    ...byLiquidity.map(
+    ...packet.liquidity_buckets.map(
       (row) =>
         `- **${row.liquidity_bucket}** | resolved ${row.resolved_count} | avg pre-close yes ${formatPercent(
           row.avg_preclose_yes_price,
-        )} | yes resolution rate ${formatPercent(row.yes_resolution_rate)}`,
+        )} | yes resolution rate ${formatPercent(row.yes_resolution_rate)} | ${row.meets_min_sample ? "publishable" : "below-sample-threshold"}`,
     ),
   ].join("\n");
 
   return {
-    slug: slugify("market-structure"),
-    title,
+    slug: packet.slug,
+    title: packet.title,
     markdown,
-    json: {
-      title,
-      generated_at: new Date().toISOString(),
-      by_category: byCategory,
-      by_liquidity: byLiquidity,
-    },
+    json: packet,
   };
 }

@@ -1,5 +1,4 @@
 import type { ReportFileSet } from "../types.js";
-import { generateCaseStudy } from "./case-study.js";
 import { generateMarketStructureReport } from "./market-structure.js";
 import { generateMoversReport } from "./movers.js";
 import { generateSectorSnapshot } from "./sector-snapshot.js";

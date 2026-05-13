@@ -1,7 +1,9 @@
 import { getSql } from "../db.js";
 import { getEnv } from "../config.js";
+import { REPORT_THRESHOLDS } from "../pipeline/thresholds.js";
 import type {
   CaseStudyMarket,
+  CaseStudyPacket,
   ReportFileSet,
   SnapshotPoint,
 } from "../types.js";
@@ -10,8 +12,8 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-  parseArg,
   slugify,
+  toFiniteNumber,
 } from "../utils.js";
 
 interface CaseStudyArgs {
@@ -53,7 +55,14 @@ export async function generateCaseStudy(
     throw new Error(`No markets found for event_id=${args.eventId}`);
   }
 
-  const primary = markets[0]!;
+  const normalizedMarkets = markets.map((market) => ({
+    ...market,
+    yes_price: toFiniteNumber(market.yes_price),
+    volume_24h: toFiniteNumber(market.volume_24h),
+    liquidity: toFiniteNumber(market.liquidity),
+  }));
+
+  const primary = normalizedMarkets[0]!;
   const snapshots = await sql<SnapshotPoint[]>`
     select
       snapshot_time,
@@ -71,22 +80,74 @@ export async function generateCaseStudy(
     latest && first && latest.yes_price !== null && first.yes_price !== null
       ? latest.yes_price - first.yes_price
       : null;
+  const totalVolume24h = normalizedMarkets.reduce(
+    (sum, market) => sum + (market.volume_24h ?? 0),
+    0,
+  );
+  const avgAbsMove =
+    milestones.length <= 1
+      ? null
+      : milestones.reduce(
+          (sum, milestone) => sum + Math.abs(milestone.change_from_prior ?? 0),
+          0,
+        ) /
+        milestones.filter((milestone) => milestone.change_from_prior !== null)
+          .length;
 
-  const title = `Case study: ${primary.title}`;
+  const packet: CaseStudyPacket = {
+    slug: slugify(`case-study-${args.eventId}`),
+    title: `Case study: ${primary.title}`,
+    provenance: {
+      generated_at: new Date().toISOString(),
+      source: "musashi_truth_layer",
+      packet_type: "case_study_packet",
+      query_window: `${env.CASE_STUDY_WINDOW_DAYS}d`,
+    },
+    event_id: args.eventId,
+    primary_market: primary,
+    related_markets: normalizedMarkets,
+    milestones,
+    summary: {
+      market_count: normalizedMarkets.length,
+      snapshot_count: snapshots.length,
+      total_change: totalChange,
+      total_volume_24h: totalVolume24h,
+      average_abs_move: avgAbsMove,
+      quality_flags: [
+        ...(normalizedMarkets.length >=
+        REPORT_THRESHOLDS.caseStudy.minMarketCount
+          ? []
+          : ["insufficient_market_count"]),
+        ...(snapshots.length >= REPORT_THRESHOLDS.caseStudy.minSnapshotCount
+          ? []
+          : ["insufficient_snapshot_count"]),
+        ...(totalVolume24h >= REPORT_THRESHOLDS.caseStudy.minTotalVolume24h
+          ? []
+          : ["insufficient_total_volume"]),
+        ...((avgAbsMove ?? 0) >=
+        REPORT_THRESHOLDS.caseStudy.minAverageAbsMove24h
+          ? []
+          : ["insufficient_average_abs_move"]),
+      ],
+    },
+  };
+
   const markdown = [
-    `# ${title}`,
+    `# ${packet.title}`,
     "",
-    `Primary market: **${primary.title}**`,
+    `Source packet for event cluster ${args.eventId}.`,
     `- current yes: ${formatPercent(primary.yes_price)}`,
     `- ${env.CASE_STUDY_WINDOW_DAYS}d change: ${formatSignedPercent(totalChange)}`,
     `- liquidity: ${formatCurrency(primary.liquidity)}`,
     `- volume 24h: ${formatCurrency(primary.volume_24h)}`,
     `- closes: ${formatDate(primary.closes_at)}`,
     "",
-    `Related markets in cluster: ${markets.length}`,
+    `Related markets in cluster: ${packet.summary.market_count}`,
+    `Snapshots in window: ${packet.summary.snapshot_count}`,
+    `Average absolute milestone move: ${formatSignedPercent(packet.summary.average_abs_move)}`,
     "",
     "## Timeline highlights",
-    ...milestones.map(
+    ...packet.milestones.map(
       (milestone, index) =>
         `${index + 1}. ${formatDate(milestone.snapshot_time)} | yes ${formatPercent(
           milestone.yes_price,
@@ -94,7 +155,7 @@ export async function generateCaseStudy(
     ),
     "",
     "## Related markets",
-    ...markets
+    ...packet.related_markets
       .slice(0, 10)
       .map(
         (market, index) =>
@@ -105,32 +166,25 @@ export async function generateCaseStudy(
   ].join("\n");
 
   return {
-    slug: slugify(`case-study-${args.eventId}`),
-    title,
+    slug: packet.slug,
+    title: packet.title,
     markdown,
-    json: {
-      title,
-      event_id: args.eventId,
-      generated_at: new Date().toISOString(),
-      primary,
-      markets,
-      milestones,
-    },
+    json: packet,
   };
 }
 
-interface Milestone extends SnapshotPoint {
-  change_from_prior: number | null;
-}
-
-function buildMilestones(snapshots: SnapshotPoint[]): Milestone[] {
-  const enriched = snapshots.map<Milestone>((snapshot, index) => {
+function buildMilestones(snapshots: SnapshotPoint[]) {
+  const enriched = snapshots.map((snapshot, index) => {
     const prior = snapshots[index - 1];
     return {
-      ...snapshot,
+      snapshot_time: snapshot.snapshot_time,
+      yes_price: toFiniteNumber(snapshot.yes_price),
       change_from_prior:
-        prior && snapshot.yes_price !== null && prior.yes_price !== null
-          ? snapshot.yes_price - prior.yes_price
+        prior &&
+        toFiniteNumber(snapshot.yes_price) !== null &&
+        toFiniteNumber(prior.yes_price) !== null
+          ? (toFiniteNumber(snapshot.yes_price) ?? 0) -
+            (toFiniteNumber(prior.yes_price) ?? 0)
           : null,
     };
   });
@@ -144,10 +198,21 @@ function buildMilestones(snapshots: SnapshotPoint[]): Milestone[] {
     )
     .slice(0, 5);
 
-  const combined = new Map<string, Milestone>();
+  const combined = new Map<
+    string,
+    {
+      snapshot_time: string;
+      yes_price: number | null;
+      change_from_prior: number | null;
+    }
+  >();
   for (const milestone of [enriched[0], ...topMoves, enriched.at(-1)].filter(
     Boolean,
-  ) as Milestone[]) {
+  ) as Array<{
+    snapshot_time: string;
+    yes_price: number | null;
+    change_from_prior: number | null;
+  }>) {
     combined.set(milestone.snapshot_time, milestone);
   }
 

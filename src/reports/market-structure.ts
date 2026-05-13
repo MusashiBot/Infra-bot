@@ -1,4 +1,4 @@
-import { sql } from "../db.js";
+import { getSql } from "../db.js";
 import type {
   LiquidityBucketStat,
   MarketStructureCategory,
@@ -7,6 +7,7 @@ import type {
 import { formatPercent, slugify } from "../utils.js";
 
 export async function generateMarketStructureReport(): Promise<ReportFileSet> {
+  const sql = getSql();
   const byCategory = await sql<MarketStructureCategory[]>`
     with resolved_markets as (
       select

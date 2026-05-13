@@ -8,6 +8,7 @@ It reads directly from the Musashi Supabase/Postgres truth layer and produces:
 - sector snapshots
 - case-study threads
 - market-structure / trust posts
+- narrative deep-dive reports synthesized from structured market data
 
 Outputs are deterministic Markdown + JSON files under `outputs/`.
 
@@ -39,6 +40,24 @@ Generate the full daily pack:
 
 ```bash
 npm run generate:daily
+```
+
+Generate one LLM-synthesized deep daily report:
+
+```bash
+npm run generate:deep-daily
+```
+
+Generate one LLM-synthesized deep daily report from already-written JSON outputs:
+
+```bash
+npm run generate:deep-daily-from-cache -- --date 2026-05-13
+```
+
+Generate one LLM-synthesized event case study:
+
+```bash
+npm run generate:deep-case-study -- --event-id YOUR_EVENT_ID
 ```
 
 Generate only movers:
@@ -85,3 +104,9 @@ This workflow needs these repo secrets:
 - `SUPABASE_DB_NAME`
 - `SUPABASE_DB_USER`
 - `SUPABASE_DB_PASSWORD`
+
+For the LLM-backed deep report path, set:
+
+- `DEEPSEEK_API_KEY`
+- optionally `DEEPSEEK_BASE_URL`
+- optionally `DEEPSEEK_MODEL`

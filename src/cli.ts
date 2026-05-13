@@ -1,5 +1,8 @@
 import { closeDb } from "./db.js";
 import { generateCaseStudy } from "./reports/case-study.js";
+import { generateDeepCaseStudyReport } from "./reports/deep-case-study.js";
+import { generateDeepCachedDailyReport } from "./reports/deep-from-cache.js";
+import { generateDeepDailyReport } from "./reports/deep-daily.js";
 import { generateDailyPack } from "./reports/daily-pack.js";
 import { generateMarketStructureReport } from "./reports/market-structure.js";
 import { generateMoversReport } from "./reports/movers.js";
@@ -11,7 +14,7 @@ async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   if (!command) {
     throw new Error(
-      "Missing command. Use daily-pack, movers, sector-snapshot, case-study, or market-structure.",
+      "Missing command. Use daily-pack, deep-daily, deep-daily-from-cache, deep-case-study, movers, sector-snapshot, case-study, or market-structure.",
     );
   }
 
@@ -21,6 +24,22 @@ async function main(): Promise<void> {
     case "daily-pack":
       reports = await generateDailyPack();
       break;
+    case "deep-daily":
+      reports = [await generateDeepDailyReport()];
+      break;
+    case "deep-daily-from-cache":
+      reports = [
+        await generateDeepCachedDailyReport({
+          date: parseArg(args, "--date"),
+        }),
+      ];
+      break;
+    case "deep-case-study": {
+      const eventId = parseArg(args, "--event-id");
+      if (!eventId) throw new Error("Missing --event-id");
+      reports = [await generateDeepCaseStudyReport({ eventId })];
+      break;
+    }
     case "movers":
       reports = [
         await generateMoversReport(parseArg(args, "--category") ?? undefined),

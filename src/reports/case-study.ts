@@ -1,4 +1,4 @@
-import { sql } from "../db.js";
+import { getSql } from "../db.js";
 import { getEnv } from "../config.js";
 import type {
   CaseStudyMarket,
@@ -21,6 +21,7 @@ interface CaseStudyArgs {
 export async function generateCaseStudy(
   args: CaseStudyArgs,
 ): Promise<ReportFileSet> {
+  const sql = getSql();
   const env = getEnv();
   const markets = await sql<CaseStudyMarket[]>`
     with latest_snapshots as (

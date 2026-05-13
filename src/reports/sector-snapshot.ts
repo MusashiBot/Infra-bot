@@ -1,4 +1,4 @@
-import { sql } from "../db.js";
+import { getSql } from "../db.js";
 import { getEnv } from "../config.js";
 import { getSector } from "../sectors.js";
 import type { ReportFileSet, SectorSnapshotRow } from "../types.js";
@@ -17,6 +17,7 @@ function escapeRegex(input: string): string {
 export async function generateSectorSnapshot(
   sectorSlug: string,
 ): Promise<ReportFileSet> {
+  const sql = getSql();
   const env = getEnv();
   const sector = getSector(sectorSlug);
   const categoryPatterns = sector.categories;

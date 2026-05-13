@@ -5,6 +5,20 @@ export interface ReportFileSet {
   json: unknown;
 }
 
+export interface NarrativeReportSection {
+  heading: string;
+  bullets: string[];
+}
+
+export interface NarrativeReportPayload {
+  title: string;
+  generated_at: string;
+  summary: string;
+  sections: NarrativeReportSection[];
+  caveats: string[];
+  source_report_slugs: string[];
+}
+
 export interface MarketMover {
   id: string;
   platform_id: string;
@@ -45,6 +59,13 @@ export interface CaseStudyMarket {
 export interface SnapshotPoint {
   snapshot_time: string;
   yes_price: number | null;
+}
+
+export interface EventClusterCandidate {
+  event_id: string;
+  market_count: number;
+  avg_abs_change_24h: number | null;
+  total_volume_24h: number | null;
 }
 
 export interface MarketStructureCategory {

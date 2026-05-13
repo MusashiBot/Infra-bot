@@ -1,4 +1,4 @@
-import { sql } from "../db.js";
+import { getSql } from "../db.js";
 import { getEnv } from "../config.js";
 import type { MarketMover, ReportFileSet } from "../types.js";
 import {
@@ -12,6 +12,7 @@ import {
 export async function generateMoversReport(
   category?: string,
 ): Promise<ReportFileSet> {
+  const sql = getSql();
   const env = getEnv();
   const rows = await sql<MarketMover[]>`
     with prior_snapshots as (
